@@ -3,6 +3,8 @@ from __future__ import print_function, division
 import datetime
 import os
 
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 from data_loader import DataLoader
@@ -234,8 +236,8 @@ class CycleGAN:
         os.makedirs('images/%s' % self.dataset_name, exist_ok=True)
         r, c = 2, 3
 
-        imgs_A = self.data_loader.load_data(domain="A", batch_size=1, is_testing=True)
-        imgs_B = self.data_loader.load_data(domain="B", batch_size=1, is_testing=True)
+        imgs_A = self.data_loader.load_data(domain="A", batch_size=1, is_testing=False)
+        imgs_B = self.data_loader.load_data(domain="B", batch_size=1, is_testing=False)
 
         # Demo (for GIF)
         # imgs_A = self.data_loader.load_img('datasets/apple2orange/testA/n07740461_1541.jpg')
@@ -265,7 +267,22 @@ class CycleGAN:
         fig.savefig("images/%s/%d_%d.png" % (self.dataset_name, epoch, batch_i), dpi=200)
         plt.close()
 
+    def predict(self, path, a_to_b=True):
+        img = self.data_loader.load_img(path)
+        if a_to_b:
+            gen_img = self.g_AB.predict(img)
+        else:
+            gen_img = self.g_BA.predict(img)
+        gen_img = 0.5 * gen_img + 0.5
+        mydpi = 200
+        plt.figure(figsize=(self.img_rows / mydpi, self.img_cols / mydpi), dpi=mydpi)
+        plt.imshow(gen_img[0])
+        plt.axis("off")
+        plt.savefig("images/%s.png" % Path(path).name, dpi=mydpi)
+        plt.close()
+
 
 if __name__ == '__main__':
-    gan = CycleGAN(epoch=None)
+    gan = CycleGAN(epoch=17)
     gan.train(epochs=100, batch_size=1, sample_interval=50)
+    # gan.predict("datasets/monet2photo/trainA/00367.jpg")
