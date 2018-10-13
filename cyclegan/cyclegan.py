@@ -2,10 +2,11 @@ from __future__ import print_function, division
 
 import datetime
 import os
-from glob import glob
 
 import matplotlib.pyplot as plt
 import numpy as np
+from data_loader import DataLoader
+from image_pool import ImagePool
 from keras.layers import Input, Dropout, Concatenate
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import UpSampling2D, Conv2D
@@ -13,15 +14,12 @@ from keras.models import Model
 from keras.optimizers import Adam
 from keras_contrib.layers.normalization import InstanceNormalization
 
-from data_loader import DataLoader
-from image_pool import ImagePool
-
 
 class CycleGAN:
-    def __init__(self):
+    def __init__(self, epoch=None):
         # Input shape
-        self.img_rows = 128
-        self.img_cols = 128
+        self.img_rows = 256
+        self.img_cols = 256
         self.channels = 3
         self.img_shape = (self.img_rows, self.img_cols, self.channels)
 
@@ -40,7 +38,7 @@ class CycleGAN:
 
         # Loss weights
         self.lambda_cycle = 10.0  # Cycle-consistency loss
-        self.lambda_id = 0.1 * self.lambda_cycle  # Identity loss
+        self.lambda_id = 0.5 * self.lambda_cycle  # Identity loss
 
         optimizer = Adam(0.0002, 0.5)
 
@@ -90,6 +88,10 @@ class CycleGAN:
                               outputs=[valid_A, valid_B,
                                        reconstr_A, reconstr_B,
                                        img_A_id, img_B_id])
+
+        if epoch is not None:
+            self.load_weights(f"saved_model/${epoch}.h5")
+
         self.combined.compile(loss=['mse', 'mse',
                                     'mae', 'mae',
                                     'mae', 'mae'],
@@ -97,6 +99,9 @@ class CycleGAN:
                                             self.lambda_cycle, self.lambda_cycle,
                                             self.lambda_id, self.lambda_id],
                               optimizer=optimizer)
+
+    def load_weights(self, path):
+        self.combined.load_weights(path)
 
     def build_generator(self):
         """U-Net Generator"""
@@ -204,6 +209,8 @@ class CycleGAN:
 
                 elapsed_time = datetime.datetime.now() - start_time
 
+                # K.clear_session()
+
                 # Plot the progress
                 print(
                     "[Epoch %d/%d] [Batch %d/%d] [D loss: %f, acc: %3d%%] [G loss: %05f, adv: %05f, recon: %05f, id: %05f] time: %s " \
@@ -219,6 +226,9 @@ class CycleGAN:
                 # If at save interval => save generated image samples
                 if batch_i % sample_interval == 0:
                     self.sample_images(epoch, batch_i)
+
+            if epoch % 1 == 0:
+                self.combined.save_weights(f"saved_model/${epoch}.h5")
 
     def sample_images(self, epoch, batch_i):
         os.makedirs('images/%s' % self.dataset_name, exist_ok=True)
@@ -252,10 +262,10 @@ class CycleGAN:
                 axs[i, j].set_title(titles[j])
                 axs[i, j].axis('off')
                 cnt += 1
-        fig.savefig("images/%s/%d_%d.png" % (self.dataset_name, epoch, batch_i))
+        fig.savefig("images/%s/%d_%d.png" % (self.dataset_name, epoch, batch_i), dpi=200)
         plt.close()
 
 
 if __name__ == '__main__':
-    gan = CycleGAN()
-    gan.train(epochs=20, batch_size=1, sample_interval=10)
+    gan = CycleGAN(epoch=None)
+    gan.train(epochs=100, batch_size=1, sample_interval=50)

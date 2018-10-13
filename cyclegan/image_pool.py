@@ -1,4 +1,3 @@
-import keras.backend as K
 import numpy as np
 
 
@@ -16,7 +15,7 @@ class ImagePool:
             return images
         return_images = []
         for img in images:
-            img = K.expand_dims(img, axis=0)
+            img = np.expand_dims(img, axis=0)
             if self.num_imgs < self.pool_size:
                 self.images.append(img)
                 self.num_imgs += 1
@@ -25,4 +24,4 @@ class ImagePool:
                 idx = np.random.randint(0, self.pool_size)
                 return_images.append(self.images[idx])
                 self.images[idx] = img
-        return K.concatenate(return_images, axis=0)
+        return np.concatenate(return_images, axis=0)
