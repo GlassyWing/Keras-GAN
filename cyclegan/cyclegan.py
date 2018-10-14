@@ -13,6 +13,7 @@ from keras.layers import Input, Dropout, Concatenate
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import UpSampling2D, Conv2D
 from keras.models import Model
+from keras.callbacks import TensorBoard
 from keras.optimizers import Adam
 from keras_contrib.layers.normalization import InstanceNormalization
 
@@ -43,8 +44,8 @@ class CycleGAN:
         optimizer = Adam(0.0002, 0.5)
 
         # Build and compile the discriminators
-        self.d_A = self.build_discriminator()
-        self.d_B = self.build_discriminator()
+        self.d_A = self.build_discriminator("d_A")
+        self.d_B = self.build_discriminator("d_B")
         self.d_A.compile(loss='mse',
                          optimizer=optimizer,
                          metrics=['accuracy'])
@@ -58,8 +59,8 @@ class CycleGAN:
         # -------------------------
 
         # Build the generators
-        self.g_AB = self.build_generator()
-        self.g_BA = self.build_generator()
+        self.g_AB = self.build_generator("g_AB")
+        self.g_BA = self.build_generator("g_BA")
 
         # Input images from both domains
         img_A = Input(shape=self.img_shape)
@@ -90,7 +91,7 @@ class CycleGAN:
                                        img_A_id, img_B_id])
 
         if weights is not None:
-            self.load_weights(f"saved_model/${weights}.h5")
+            self.load_weights(f"saved_model/{dataset_name}/{weights}.h5")
 
         self.combined.compile(loss=['mse', 'mse',
                                     'mae', 'mae',
@@ -103,7 +104,7 @@ class CycleGAN:
     def load_weights(self, path):
         self.combined.load_weights(path)
 
-    def build_generator(self):
+    def build_generator(self, name="g_AB"):
         """U-Net Generator"""
 
         def conv2d(layer_input, filters, f_size=4):
@@ -140,9 +141,9 @@ class CycleGAN:
         u4 = UpSampling2D(size=2)(u3)
         output_img = Conv2D(self.channels, kernel_size=4, strides=1, padding='same', activation='tanh')(u4)
 
-        return Model(d0, output_img)
+        return Model(d0, output_img, name=name)
 
-    def build_discriminator(self):
+    def build_discriminator(self, name="d_A"):
 
         def d_layer(layer_input, filters, f_size=4, normalization=True):
             """Discriminator layer"""
@@ -161,7 +162,7 @@ class CycleGAN:
 
         validity = Conv2D(1, kernel_size=4, strides=1, padding='same')(d4)
 
-        return Model(img, validity)
+        return Model(img, validity, name=name)
 
     def train(self, epochs, batch_size=1, sample_interval=50, pool_size=50):
 
@@ -173,6 +174,15 @@ class CycleGAN:
 
         fake_a_pool = ImagePool(pool_size)
         fake_b_pool = ImagePool(pool_size)
+
+        tensorboard = TensorBoard(batch_size=batch_size, write_grads=True)
+        tensorboard.set_model(self.combined)
+
+        def named_logs(model, logs):
+            result = {}
+            for l in zip(model.metrics_names, logs):
+                result[l[0]] = l[1]
+            return result
 
         for epoch in range(epochs):
             for batch_i, (imgs_A, imgs_B) in enumerate(self.data_loader.load_batch(batch_size)):
@@ -228,7 +238,7 @@ class CycleGAN:
                     self.sample_images(epoch, batch_i)
 
             if epoch % 1 == 0:
-                self.combined.save_weights(f"saved_model/${epoch}.h5")
+                self.combined.save_weights(f"saved_model/{self.dataset_name}/{epoch}.h5")
 
     def sample_images(self, epoch, batch_i):
         os.makedirs('images/%s' % self.dataset_name, exist_ok=True)
@@ -283,6 +293,6 @@ class CycleGAN:
 
 
 if __name__ == '__main__':
-    gan = CycleGAN(weights=None, dataset_name="horse2zebra")
+    gan = CycleGAN(weights=None, dataset_name="apple2orange")
     gan.train(epochs=100, batch_size=1, sample_interval=50)
     # gan.predict("datasets/monet2photo/trainA/00367.jpg")
