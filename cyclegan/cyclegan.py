@@ -18,15 +18,13 @@ from keras_contrib.layers.normalization import InstanceNormalization
 
 
 class CycleGAN:
-    def __init__(self, epoch=None):
+    def __init__(self, weights=None, img_shape=(256, 256, 3), dataset_name='monet2photo'):
         # Input shape
-        self.img_rows = 256
-        self.img_cols = 256
-        self.channels = 3
-        self.img_shape = (self.img_rows, self.img_cols, self.channels)
+        self.img_rows, self.img_cols, self.channels = img_shape
+        self.img_shape = img_shape
 
         # Configure data loader
-        self.dataset_name = 'monet2photo'
+        self.dataset_name = dataset_name
         self.data_loader = DataLoader(dataset_name=self.dataset_name,
                                       img_res=(self.img_rows, self.img_cols))
 
@@ -42,7 +40,7 @@ class CycleGAN:
         self.lambda_cycle = 10.0  # Cycle-consistency loss
         self.lambda_id = 0.5 * self.lambda_cycle  # Identity loss
 
-        optimizer = Adam(0.0002, 0.5, decay=1e-5)
+        optimizer = Adam(0.0002, 0.5)
 
         # Build and compile the discriminators
         self.d_A = self.build_discriminator()
@@ -91,8 +89,8 @@ class CycleGAN:
                                        reconstr_A, reconstr_B,
                                        img_A_id, img_B_id])
 
-        if epoch is not None:
-            self.load_weights(f"saved_model/${epoch}.h5")
+        if weights is not None:
+            self.load_weights(f"saved_model/${weights}.h5")
 
         self.combined.compile(loss=['mse', 'mse',
                                     'mae', 'mae',
@@ -283,7 +281,8 @@ class CycleGAN:
         plt.savefig("images/%s.png" % Path(path).stem, dpi=mydpi, bbox_inches='tight', pad_inches=0)
         plt.close()
 
+
 if __name__ == '__main__':
-    gan = CycleGAN(epoch=None)
+    gan = CycleGAN(weights=None, dataset_name="horse2zebra")
     gan.train(epochs=100, batch_size=1, sample_interval=50)
     # gan.predict("datasets/monet2photo/trainA/00367.jpg")
