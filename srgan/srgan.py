@@ -10,35 +10,30 @@ Instrustion on running the script:
 """
 
 from __future__ import print_function, division
-import scipy
 
-from keras.datasets import mnist
-from keras_contrib.layers.normalization import InstanceNormalization
-from keras.layers import Input, Dense, Reshape, Flatten, Dropout, Concatenate
-from keras.layers import BatchNormalization, Activation, ZeroPadding2D, Add
-from keras.layers.advanced_activations import PReLU, LeakyReLU
-from keras.layers.convolutional import UpSampling2D, Conv2D
-from keras.applications import VGG19
-from keras.models import Sequential, Model
-from keras.optimizers import Adam
 import datetime
-import matplotlib.pyplot as plt
-import sys
-from data_loader import DataLoader
-import numpy as np
 import os
 
-import keras.backend as K
+import matplotlib.pyplot as plt
+import numpy as np
+from data_loader import DataLoader
+from keras.applications import VGG19
+from keras.callbacks import TensorBoard
+from keras.layers import BatchNormalization, Activation, Add
+from keras.layers import Input, Dense
+from keras.layers.advanced_activations import LeakyReLU
+from keras.layers.convolutional import UpSampling2D, Conv2D
+from keras.models import Model
+from keras.optimizers import Adam
+
 
 class SRGAN():
-    def __init__(self):
+    def __init__(self, weights=None, image_shape=(64, 64, 3), dataset_name="collections"):
         # Input shape
-        self.channels = 3
-        self.lr_height = 64                 # Low resolution height
-        self.lr_width = 64                  # Low resolution width
-        self.lr_shape = (self.lr_height, self.lr_width, self.channels)
-        self.hr_height = self.lr_height*4   # High resolution height
-        self.hr_width = self.lr_width*4     # High resolution width
+        self.lr_height, self.lr_width, self.channels = image_shape
+        self.lr_shape = image_shape
+        self.hr_height = self.lr_height * 4  # High resolution height
+        self.hr_width = self.lr_width * 4  # High resolution width
         self.hr_shape = (self.hr_height, self.hr_width, self.channels)
 
         # Number of residual blocks in the generator
@@ -51,16 +46,16 @@ class SRGAN():
         self.vgg = self.build_vgg()
         self.vgg.trainable = False
         self.vgg.compile(loss='mse',
-            optimizer=optimizer,
-            metrics=['accuracy'])
+                         optimizer=optimizer,
+                         metrics=['accuracy'])
 
         # Configure data loader
-        self.dataset_name = 'img_align_celeba'
+        self.dataset_name = dataset_name
         self.data_loader = DataLoader(dataset_name=self.dataset_name,
                                       img_res=(self.hr_height, self.hr_width))
 
         # Calculate output shape of D (PatchGAN)
-        patch = int(self.hr_height / 2**4)
+        patch = int(self.hr_height / 2 ** 4)
         self.disc_patch = (patch, patch, 1)
 
         # Number of filters in the first layer of G and D
@@ -70,8 +65,8 @@ class SRGAN():
         # Build and compile the discriminator
         self.discriminator = self.build_discriminator()
         self.discriminator.compile(loss='mse',
-            optimizer=optimizer,
-            metrics=['accuracy'])
+                                   optimizer=optimizer,
+                                   metrics=['accuracy'])
 
         # Build the generator
         self.generator = self.build_generator()
@@ -97,13 +92,15 @@ class SRGAN():
                               loss_weights=[1e-3, 1],
                               optimizer=optimizer)
 
+        if weights is not None:
+            self.combined.load_weights(f"saved_model/{dataset_name}/{weights}.h5")
 
     def build_vgg(self):
         """
         Builds a pre-trained VGG19 model that outputs image features extracted at the
         third block of the model
         """
-        vgg = VGG19(weights="imagenet")
+        vgg = VGG19(weights="imagenet", include_top=False)
         # Set outputs to outputs of last conv. layer in block 3
         # See architecture at: https://github.com/keras-team/keras/blob/master/keras/applications/vgg19.py
         vgg.outputs = [vgg.layers[9].output]
@@ -175,20 +172,29 @@ class SRGAN():
 
         d1 = d_block(d0, self.df, bn=False)
         d2 = d_block(d1, self.df, strides=2)
-        d3 = d_block(d2, self.df*2)
-        d4 = d_block(d3, self.df*2, strides=2)
-        d5 = d_block(d4, self.df*4)
-        d6 = d_block(d5, self.df*4, strides=2)
-        d7 = d_block(d6, self.df*8)
-        d8 = d_block(d7, self.df*8, strides=2)
+        d3 = d_block(d2, self.df * 2)
+        d4 = d_block(d3, self.df * 2, strides=2)
+        d5 = d_block(d4, self.df * 4)
+        d6 = d_block(d5, self.df * 4, strides=2)
+        d7 = d_block(d6, self.df * 8)
+        d8 = d_block(d7, self.df * 8, strides=2)
 
-        d9 = Dense(self.df*16)(d8)
+        d9 = Dense(self.df * 16)(d8)
         d10 = LeakyReLU(alpha=0.2)(d9)
         validity = Dense(1, activation='sigmoid')(d10)
 
         return Model(d0, validity)
 
     def train(self, epochs, batch_size=1, sample_interval=50):
+
+        tensorboard = TensorBoard(batch_size=batch_size, write_grads=True)
+        tensorboard.set_model(self.combined)
+
+        def named_logs(model, logs):
+            result = {}
+            for l in zip(model.metrics_names, logs):
+                result[l[0]] = l[1]
+            return result
 
         start_time = datetime.datetime.now()
 
@@ -230,11 +236,19 @@ class SRGAN():
 
             elapsed_time = datetime.datetime.now() - start_time
             # Plot the progress
-            print ("%d time: %s" % (epoch, elapsed_time))
+            print(
+                "[Epoch %d/%d] [D loss: %f, acc: %3d%%] [G loss: %05f] time: %s " \
+                % (epoch, epochs,
+                   d_loss[0], 100 * d_loss[1],
+                   g_loss[0],
+                   elapsed_time))
+
+            tensorboard.on_epoch_end(epoch, named_logs(self.combined, g_loss))
 
             # If at save interval => save generated image samples
             if epoch % sample_interval == 0:
                 self.sample_images(epoch)
+                self.combined.save_weights(f"saved_model/{self.dataset_name}/{epoch}.h5")
 
     def sample_images(self, epoch):
         os.makedirs('images/%s' % self.dataset_name, exist_ok=True)
@@ -267,6 +281,7 @@ class SRGAN():
             plt.imshow(imgs_lr[i])
             fig.savefig('images/%s/%d_lowres%d.png' % (self.dataset_name, epoch, i))
             plt.close()
+
 
 if __name__ == '__main__':
     gan = SRGAN()
