@@ -42,7 +42,7 @@ class CycleGAN:
         self.lambda_cycle = 10.0  # Cycle-consistency loss
         self.lambda_id = 0.5 * self.lambda_cycle  # Identity loss
 
-        optimizer = Adam(0.0002, 0.5)
+        optimizer = Adam(0.0002, 0.5, decay=1e-5)
 
         # Build and compile the discriminators
         self.d_A = self.build_discriminator()
@@ -275,14 +275,15 @@ class CycleGAN:
             gen_img = self.g_BA.predict(img)
         gen_img = 0.5 * gen_img + 0.5
         mydpi = 200
-        plt.figure(figsize=(self.img_rows / mydpi, self.img_cols / mydpi), dpi=mydpi)
-        plt.imshow(gen_img[0])
+        plt.figure(figsize=(self.img_rows * 2 / mydpi, self.img_cols * 2 / mydpi), dpi=mydpi)
         plt.axis("off")
-        plt.savefig("images/%s.png" % Path(path).name, dpi=mydpi)
+        fig = plt.imshow(gen_img[0])
+        fig.axes.get_xaxis().set_visible(False)
+        fig.axes.get_yaxis().set_visible(False)
+        plt.savefig("images/%s.png" % Path(path).stem, dpi=mydpi, bbox_inches='tight', pad_inches=0)
         plt.close()
 
-
 if __name__ == '__main__':
-    gan = CycleGAN(epoch=17)
+    gan = CycleGAN(epoch=None)
     gan.train(epochs=100, batch_size=1, sample_interval=50)
     # gan.predict("datasets/monet2photo/trainA/00367.jpg")
