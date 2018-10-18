@@ -12,6 +12,13 @@ from keras.layers import Dense, Reshape, Conv2D, UpSampling2D, BatchNormalizatio
 from keras.models import Sequential, Model
 from keras.optimizers import Adam
 
+from keras.backend.tensorflow_backend import set_session
+import tensorflow as tf
+
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+set_session(tf.Session(config=config))
+
 
 class DCGAN:
 
@@ -86,16 +93,14 @@ class DCGAN:
     def build_discriminator(self):
         model = Sequential()
         model.add(Conv2D(self.df_dim * 1, kernel_size=5, strides=2, input_shape=self.img_shape, padding="same"))
+        model.add(BatchNormalization(momentum=0.8))
         model.add(LeakyReLU(alpha=0.2))
-        model.add(Dropout(0.25))
         model.add(Conv2D(self.df_dim * 2, kernel_size=5, strides=2, padding="same"))
         model.add(BatchNormalization(momentum=0.8))
         model.add(LeakyReLU(alpha=0.2))
-        model.add(Dropout(0.25))
         model.add(Conv2D(self.df_dim * 4, kernel_size=5, strides=2, padding="same"))
         model.add(BatchNormalization(momentum=0.8))
         model.add(LeakyReLU(alpha=0.2))
-        model.add(Dropout(0.25))
         model.add(Conv2D(self.df_dim * 8, kernel_size=5, strides=2, padding="same"))
         model.add(BatchNormalization(momentum=0.8))
         model.add(LeakyReLU())
@@ -156,4 +161,4 @@ class DCGAN:
 
 if __name__ == '__main__':
     dcgan = DCGAN()
-    dcgan.train(epochs=4000, batch_size=32, save_interval=10)
+    dcgan.train(epochs=4000, batch_size=32, save_interval=50)
