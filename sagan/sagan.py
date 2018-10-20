@@ -5,16 +5,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from keras.backend.tensorflow_backend import set_session
-from keras.layers import BatchNormalization, Activation, ReLU, Conv2DTranspose, Dense, Conv2D
+from keras.layers import BatchNormalization, Activation, ReLU
 from keras.layers import Input, Reshape, Flatten
 from keras.layers.advanced_activations import LeakyReLU
 from keras.models import Model, Sequential
 from keras.optimizers import Adam
 
 from data_loader import DataLoader
-# from spectral_norm import ConvSN2D as Conv2D
-# from spectral_norm import ConvSN2DTranspose as Conv2DTranspose
-# from spectral_norm import DenseSN as Dense
+from spectral_norm import ConvSN2D as Conv2D
+from spectral_norm import ConvSN2DTranspose as Conv2DTranspose
+from spectral_norm import DenseSN as Dense
 from attention import SelfAttention
 
 config = tf.ConfigProto()
@@ -42,7 +42,7 @@ class SAGAN:
                  dfc_dim=32,
                  latent_dim=100,
                  learning_rate_g=0.0001,
-                 learning_rate_d=0.0002,
+                 learning_rate_d=0.0004,
                  alpha=0.2,
                  beta1=0.0,
                  beta2=0.5,
@@ -226,4 +226,4 @@ class SAGAN:
 
 if __name__ == '__main__':
     sagan = SAGAN()
-    sagan.train(epochs=4000, batch_size=32, save_interval=100)
+    sagan.train(epochs=4000, batch_size=64, save_interval=100)
