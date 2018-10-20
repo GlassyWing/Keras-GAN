@@ -11,6 +11,7 @@ from keras.layers import Dense, Reshape, Conv2D, UpSampling2D, BatchNormalizatio
     Flatten, Dropout
 from keras.models import Sequential, Model
 from keras.optimizers import Adam
+import keras.backend as K
 
 from keras.backend.tensorflow_backend import set_session
 import tensorflow as tf
@@ -18,6 +19,15 @@ import tensorflow as tf
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
 set_session(tf.Session(config=config))
+
+
+def discriminator_loss(y_true, y_pred):
+    return y_true * K.mean(K.maximum(1. - y_pred, 0.), axis=-1) \
+           + (1. - y_true) * K.mean(K.maximum(1. + y_pred, 0.), axis=-1)
+
+
+def generator_loss(_, y_pred):
+    return - K.mean(y_pred)
 
 
 class DCGAN:
@@ -35,7 +45,7 @@ class DCGAN:
 
         # Build discriminator
         self.discriminator = self.build_discriminator()
-        self.discriminator.compile(optimizer=optimizer, loss="binary_crossentropy", metrics=["accuracy"])
+        self.discriminator.compile(optimizer=optimizer, loss=discriminator_loss, metrics=["accuracy"])
 
         # Build generator
         self.generator = self.build_generator()
@@ -53,7 +63,7 @@ class DCGAN:
         # Trains the generator to fool the discriminator
         self.combined = Model(z, valid)
         self.combined.compile(optimizer=optimizer,
-                              loss='binary_crossentropy')
+                              loss=generator_loss)
 
     def build_generator(self):
         s_h, s_w = self.img_rows, self.img_cols
@@ -105,7 +115,7 @@ class DCGAN:
         model.add(BatchNormalization(momentum=0.8))
         model.add(LeakyReLU())
         model.add(Flatten())
-        model.add(Dense(1, activation="sigmoid"))
+        model.add(Dense(1, activation=None))
 
         print("Structure: discriminator")
         model.summary()
