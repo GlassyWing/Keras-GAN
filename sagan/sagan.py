@@ -1,28 +1,74 @@
 from __future__ import print_function, division
 
+import keras.backend as K
 import matplotlib.pyplot as plt
 import numpy as np
-from keras.datasets import mnist
-from keras.layers import BatchNormalization, Activation, ZeroPadding2D
-from keras.layers import Input, Dense, Reshape, Flatten, Dropout
+import tensorflow as tf
+from keras.backend.tensorflow_backend import set_session
+from keras.layers import BatchNormalization, Activation, ReLU, Conv2DTranspose, Dense, Conv2D
+from keras.layers import Input, Reshape, Flatten
 from keras.layers.advanced_activations import LeakyReLU
-from keras.layers.convolutional import UpSampling2D, Conv2D
-from keras.models import Sequential, Model
+from keras.models import Model, Sequential
 from keras.optimizers import Adam
 
+from data_loader import DataLoader
+# from spectral_norm import ConvSN2D as Conv2D
+# from spectral_norm import ConvSN2DTranspose as Conv2DTranspose
+# from spectral_norm import DenseSN as Dense
+from attention import SelfAttention
 
-class DCGAN():
-    def __init__(self, image_shape=(28, 28, 1), latent_dim=100):
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+config.gpu_options.per_process_gpu_memory_fraction = 0.666
+set_session(tf.Session(config=config))
+
+
+def discriminator_loss(y_true, y_pred):
+    return y_true * K.mean(K.maximum(1. - y_pred, 0.), axis=-1) \
+                    + (1. - y_true) * K.mean(K.maximum(1. + y_pred, 0.), axis=-1)
+
+
+def generator_loss(_, y_pred):
+    return - K.mean(y_pred)
+
+
+class SAGAN:
+
+    def __init__(self,
+                 image_shape=(64, 64, 1),
+                 gf_dim=4,
+                 gfc_dim=512,
+                 df_dim=4,
+                 dfc_dim=32,
+                 latent_dim=100,
+                 learning_rate_g=0.0001,
+                 learning_rate_d=0.0002,
+                 alpha=0.2,
+                 beta1=0.0,
+                 beta2=0.5,
+                 dtype='float64',
+                 dataset_name='mnist'):
+
         # Input shape
         self.img_rows, self.img_cols, self.channels = self.img_shape = image_shape
         self.latent_dim = latent_dim
 
-        optimizer = Adam(0.0002, 0.5)
+        self.alpha = alpha
+        self.dtype = dtype
+        self.gf_dim = gf_dim
+        self.gfc_dim = gfc_dim
+        self.df_dim = df_dim
+        self.dfc_dim = dfc_dim
+        self.dataset_name = dataset_name
+        self.data_loader = DataLoader(dataset_name)
+
+        generator_optimizer = Adam(learning_rate_g, beta1)
+        discriminator_optimizer = Adam(learning_rate_d, beta2)
 
         # Build and compile the discriminator
         self.discriminator = self.build_discriminator()
-        self.discriminator.compile(loss='binary_crossentropy',
-                                   optimizer=optimizer,
+        self.discriminator.compile(loss=discriminator_loss,
+                                   optimizer=discriminator_optimizer,
                                    metrics=['accuracy'])
 
         # Build the generator
@@ -41,24 +87,39 @@ class DCGAN():
         # The combined model  (stacked generator and discriminator)
         # Trains the generator to fool the discriminator
         self.combined = Model(z, valid)
-        self.combined.compile(loss='binary_crossentropy', optimizer=optimizer)
+        self.combined.compile(loss=generator_loss, optimizer=generator_optimizer)
 
     def build_generator(self):
 
-        model = Sequential()
+        def create_conv_transp(filters):
+            return Conv2DTranspose(filters, self.gf_dim,
+                                   padding="SAME", activation=None, dtype=self.dtype,
+                                   use_bias=False, strides=2)
 
-        model.add(Dense(128 * 7 * 7, activation="relu", input_dim=self.latent_dim))
-        model.add(Reshape((7, 7, 128)))
-        model.add(UpSampling2D())
-        model.add(Conv2D(128, kernel_size=3, padding="same"))
+        model = Sequential()
+        model.add(Dense(self.gf_dim * self.gf_dim * self.gfc_dim, input_dim=self.latent_dim))
+        model.add(Reshape((self.gf_dim, self.gf_dim, self.gfc_dim)))
+        model.add(create_conv_transp(self.gfc_dim // 2))
         model.add(BatchNormalization(momentum=0.8))
-        model.add(Activation("relu"))
-        model.add(UpSampling2D())
-        model.add(Conv2D(64, kernel_size=3, padding="same"))
+        model.add(ReLU())
+        model.add(SelfAttention())
+
+        model.add(create_conv_transp(self.gfc_dim // 4))
         model.add(BatchNormalization(momentum=0.8))
-        model.add(Activation("relu"))
-        model.add(Conv2D(self.channels, kernel_size=3, padding="same"))
-        model.add(Activation("tanh"))
+        model.add(ReLU())
+
+        model.add(create_conv_transp(self.gfc_dim // 8))
+        model.add(BatchNormalization(momentum=0.8))
+        model.add(ReLU())
+        model.add(SelfAttention())
+
+        model.add(create_conv_transp(self.gfc_dim // 16))
+        model.add(BatchNormalization(momentum=0.8))
+        model.add(ReLU())
+
+        model.add(Conv2D(self.channels, 3, strides=1,
+                         dtype=self.dtype, padding='SAME', activation=None))
+        model.add(Activation('tanh'))
 
         model.summary()
 
@@ -69,26 +130,35 @@ class DCGAN():
 
     def build_discriminator(self):
 
-        model = Sequential()
+        def create_conv(filters):
+            return Conv2D(filters, self.gf_dim,
+                          padding="SAME", activation=None, dtype=self.dtype,
+                          use_bias=False, strides=2)
 
-        model.add(Conv2D(32, kernel_size=3, strides=2, input_shape=self.img_shape, padding="same"))
-        model.add(LeakyReLU(alpha=0.2))
-        model.add(Dropout(0.25))
-        model.add(Conv2D(64, kernel_size=3, strides=2, padding="same"))
-        model.add(ZeroPadding2D(padding=((0, 1), (0, 1))))
+        model = Sequential()
+        model.add(Conv2D(self.dfc_dim, self.df_dim,
+                         padding="SAME", activation=None, dtype=self.dtype,
+                         use_bias=False, strides=2, input_shape=self.img_shape))
+        model.add(create_conv(self.dfc_dim))
         model.add(BatchNormalization(momentum=0.8))
-        model.add(LeakyReLU(alpha=0.2))
-        model.add(Dropout(0.25))
-        model.add(Conv2D(128, kernel_size=3, strides=2, padding="same"))
+        model.add(LeakyReLU(alpha=self.alpha))
+        model.add(SelfAttention())
+
+        model.add(create_conv(self.dfc_dim * 2))
         model.add(BatchNormalization(momentum=0.8))
-        model.add(LeakyReLU(alpha=0.2))
-        model.add(Dropout(0.25))
-        model.add(Conv2D(256, kernel_size=3, strides=1, padding="same"))
+        model.add(LeakyReLU(alpha=self.alpha))
+
+        model.add(create_conv(self.dfc_dim * 4))
         model.add(BatchNormalization(momentum=0.8))
-        model.add(LeakyReLU(alpha=0.2))
-        model.add(Dropout(0.25))
+        model.add(LeakyReLU(alpha=self.alpha))
+        model.add(SelfAttention())
+
+        model.add(create_conv(self.dfc_dim * 8))
+        model.add(BatchNormalization(momentum=0.8))
+        model.add(LeakyReLU(alpha=self.alpha))
+
         model.add(Flatten())
-        model.add(Dense(1, activation='sigmoid'))
+        model.add(Dense(units=1, dtype=self.dtype, activation=None))
 
         model.summary()
 
@@ -98,13 +168,6 @@ class DCGAN():
         return Model(img, validity)
 
     def train(self, epochs, batch_size=128, save_interval=50):
-
-        # Load the dataset
-        (X_train, _), (_, _) = mnist.load_data()
-
-        # Rescale -1 to 1
-        X_train = X_train / 127.5 - 1.
-        X_train = np.expand_dims(X_train, axis=3)
 
         # Adversarial ground truths
         valid = np.ones((batch_size, 1))
@@ -117,8 +180,7 @@ class DCGAN():
             # ---------------------
 
             # Select a random half of images
-            idx = np.random.randint(0, X_train.shape[0], batch_size)
-            imgs = X_train[idx]
+            imgs = self.data_loader.load_data(batch_size)
 
             # Sample noise and generate a batch of new images
             noise = np.random.normal(0, 1, (batch_size, self.latent_dim))
@@ -127,7 +189,7 @@ class DCGAN():
             # Train the discriminator (real classified as ones and generated as zeros)
             d_loss_real = self.discriminator.train_on_batch(imgs, valid)
             d_loss_fake = self.discriminator.train_on_batch(gen_imgs, fake)
-            d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
+            d_loss = np.add(d_loss_real, d_loss_fake)
 
             # ---------------------
             #  Train Generator
@@ -163,5 +225,5 @@ class DCGAN():
 
 
 if __name__ == '__main__':
-    dcgan = DCGAN()
-    dcgan.train(epochs=4000, batch_size=32, save_interval=50)
+    sagan = SAGAN()
+    sagan.train(epochs=4000, batch_size=32, save_interval=100)
