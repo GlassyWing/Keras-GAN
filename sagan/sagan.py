@@ -13,6 +13,7 @@ from keras.layers import Input, Reshape, Flatten
 from keras.layers.advanced_activations import LeakyReLU
 from keras.models import Model, Sequential
 from keras.optimizers import Adam
+import keras
 
 from data_loader import DataLoader
 from spectral_norm import ConvSN2D as Conv2D
@@ -50,7 +51,6 @@ class SAGAN:
                  alpha=0.2,
                  beta1=0.0,
                  beta2=0.5,
-                 dtype='float64',
                  dataset_name='mnist',
                  dataset_path="."):
 
@@ -59,7 +59,6 @@ class SAGAN:
         self.latent_dim = latent_dim
 
         self.alpha = alpha
-        self.dtype = dtype
         self.gf_dim = gf_dim
         self.gfc_dim = gfc_dim
         self.df_dim = df_dim
@@ -101,11 +100,11 @@ class SAGAN:
 
         def create_conv_transp(filters):
             return Conv2DTranspose(filters, self.gf_dim,
-                                   padding="SAME", activation=None, dtype=self.dtype,
+                                   padding="SAME", activation=None,
                                    use_bias=False, strides=2)
 
         model = Sequential()
-        model.add(Dense(self.gf_dim * self.gf_dim * self.gfc_dim, input_dim=self.latent_dim))
+        model.add(keras.layers.Dense(self.gf_dim * self.gf_dim * self.gfc_dim, input_dim=self.latent_dim))
         model.add(Reshape((self.gf_dim, self.gf_dim, self.gfc_dim)))
         model.add(create_conv_transp(self.gfc_dim // 2))
         model.add(BatchNormalization(momentum=0.8))
@@ -125,8 +124,7 @@ class SAGAN:
         model.add(BatchNormalization(momentum=0.8))
         model.add(ReLU())
 
-        model.add(Conv2D(self.channels, 3, strides=1,
-                         dtype=self.dtype, padding='SAME', activation=None))
+        model.add(Conv2D(self.channels, 3, strides=1, padding='SAME', activation=None))
         model.add(Activation('tanh'))
 
         model.summary()
@@ -140,12 +138,12 @@ class SAGAN:
 
         def create_conv(filters):
             return Conv2D(filters, self.gf_dim,
-                          padding="SAME", activation=None, dtype=self.dtype,
+                          padding="SAME", activation=None,
                           use_bias=False, strides=2)
 
         model = Sequential()
         model.add(Conv2D(self.dfc_dim, self.df_dim,
-                         padding="SAME", activation=None, dtype=self.dtype,
+                         padding="SAME", activation=None,
                          use_bias=False, strides=2, input_shape=self.img_shape))
         model.add(create_conv(self.dfc_dim))
         model.add(BatchNormalization(momentum=0.8))
@@ -166,7 +164,7 @@ class SAGAN:
         model.add(LeakyReLU(alpha=self.alpha))
 
         model.add(Flatten())
-        model.add(Dense(units=1, dtype=self.dtype, activation=None))
+        model.add(Dense(units=1, activation=None))
 
         model.summary()
 
