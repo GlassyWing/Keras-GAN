@@ -41,9 +41,7 @@ class SAGAN:
     def __init__(self,
                  model_id=None,
                  image_shape=(64, 64, 1),
-                 gf_dim=4,
                  gfc_dim=512,
-                 df_dim=4,
                  dfc_dim=32,
                  latent_dim=100,
                  learning_rate_g=0.0001,
@@ -59,12 +57,14 @@ class SAGAN:
         self.latent_dim = latent_dim
 
         self.alpha = alpha
-        self.gf_dim = gf_dim
+        self.gf_dim = self.img_rows // 16
         self.gfc_dim = gfc_dim
-        self.df_dim = df_dim
+        self.df_dim = self.img_rows // 16
         self.dfc_dim = dfc_dim
         self.dataset_name = dataset_name
-        self.data_loader = DataLoader(dataset_path=dataset_path, dataset_name=dataset_name)
+        self.data_loader = DataLoader(dataset_path=dataset_path,
+                                      dataset_name=dataset_name,
+                                      img_res=(self.img_rows, self.img_cols))
 
         generator_optimizer = Adam(learning_rate_g, beta1)
         discriminator_optimizer = Adam(learning_rate_d, beta2)
@@ -254,6 +254,6 @@ class SAGAN:
 
 
 if __name__ == '__main__':
-    sagan = SAGAN(image_shape=(64, 64, 3),
+    sagan = SAGAN(image_shape=(128, 128, 3),
                   dataset_name="img_align_celeba", dataset_path="G:\data\GAN")
     sagan.train(epochs=4000, batch_size=64, save_interval=100)
