@@ -1,9 +1,7 @@
+import tensorflow as tf
 from keras import backend as K
 from keras.engine.topology import Layer
-from keras.layers import Flatten
 from keras.initializers import constant
-import tensorflow as tf
-
 from spectral_norm import ConvSN2D as Conv2D
 
 
@@ -21,7 +19,6 @@ class SelfAttention(Layer):
         self.data_format = data_format
 
     def build(self, input_shape):
-        self.final_shape = input_shape
 
         if self.data_format == 'channels_first':
             channel_axis = 1

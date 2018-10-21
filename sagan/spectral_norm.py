@@ -83,7 +83,7 @@ class DenseSN(Dense):
         self.input_spec = InputSpec(min_ndim=2, axes={-1: input_dim})
         self.built = True
 
-    def call(self, inputs, training=True):
+    def call(self, inputs, training=None):
         if self.spectral_normalization:
             w_shape = self.kernel.shape.as_list()
 
@@ -190,7 +190,7 @@ class ConvSN2D(Conv2D):
                                     axes={channel_axis: input_dim})
         self.built = True
 
-    def call(self, inputs, training=True):
+    def call(self, inputs, training=None):
 
         if self.spectral_normalization:
 
@@ -310,7 +310,7 @@ class ConvSN2DTranspose(Conv2DTranspose):
         self.input_spec = InputSpec(ndim=4, axes={channel_axis: input_dim})
         self.built = True
 
-    def call(self, inputs, training=True):
+    def call(self, inputs, training=None):
         input_shape = K.shape(inputs)
         batch_size = input_shape[0]
         if self.data_format == 'channels_first':
