@@ -8,8 +8,8 @@ from spectral_norm import ConvSN2D as Conv2D
 def hw_flatten(x):
     # Input shape x: [BATCH, HEIGHT, WIDTH, CHANNELS]
     # flat the feature volume across the width and height dimensions
-    x_shape = K.shape(x)
-    return K.reshape(x, [x_shape[0], -1, x_shape[-1]])  # return [BATCH, W*H, CHANNELS]
+    x_shape = tf.shape(x)
+    return tf.reshape(x, [x_shape[0], -1, x_shape[-1]])  # return [BATCH, W*H, CHANNELS]
 
 
 class SelfAttention(Layer):

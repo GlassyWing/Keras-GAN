@@ -43,12 +43,12 @@ class SAGAN:
                  image_shape=(64, 64, 1),
                  gfc_dim=512,
                  dfc_dim=32,
-                 latent_dim=100,
+                 latent_dim=128,
                  learning_rate_g=0.0001,
                  learning_rate_d=0.0004,
                  alpha=0.2,
                  beta1=0.0,
-                 beta2=0.5,
+                 beta2=0.9,
                  dataset_name='mnist',
                  dataset_path="."):
 
@@ -99,7 +99,7 @@ class SAGAN:
     def build_generator(self):
 
         def create_conv_transp(filters):
-            return Conv2DTranspose(filters, self.gf_dim,
+            return Conv2DTranspose(filters, 5,
                                    padding="SAME", activation=None,
                                    use_bias=False, strides=2)
 
@@ -137,12 +137,12 @@ class SAGAN:
     def build_discriminator(self):
 
         def create_conv(filters):
-            return Conv2D(filters, self.gf_dim,
+            return Conv2D(filters, 5,
                           padding="SAME", activation=None,
                           use_bias=False, strides=2)
 
         model = Sequential()
-        model.add(Conv2D(self.dfc_dim, self.df_dim,
+        model.add(Conv2D(self.dfc_dim, 5,
                          padding="SAME", activation=None,
                          use_bias=False, strides=2, input_shape=self.img_shape))
         model.add(create_conv(self.dfc_dim))
@@ -256,4 +256,4 @@ class SAGAN:
 if __name__ == '__main__':
     sagan = SAGAN(image_shape=(128, 128, 3),
                   dataset_name="img_align_celeba", dataset_path="G:\data\GAN")
-    sagan.train(epochs=4000, batch_size=64, save_interval=100)
+    sagan.train(epochs=1000000, batch_size=64, save_interval=100)
