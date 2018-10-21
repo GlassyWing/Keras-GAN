@@ -1,10 +1,13 @@
 from __future__ import print_function, division
 
+import datetime
+
 import keras.backend as K
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from keras.backend.tensorflow_backend import set_session
+from keras.callbacks import TensorBoard
 from keras.layers import BatchNormalization, Activation, ReLU
 from keras.layers import Input, Reshape, Flatten
 from keras.layers.advanced_activations import LeakyReLU
@@ -25,7 +28,7 @@ set_session(tf.Session(config=config))
 
 def discriminator_loss(y_true, y_pred):
     return y_true * K.mean(K.maximum(1. - y_pred, 0.), axis=-1) \
-                    + (1. - y_true) * K.mean(K.maximum(1. + y_pred, 0.), axis=-1)
+           + (1. - y_true) * K.mean(K.maximum(1. + y_pred, 0.), axis=-1)
 
 
 def generator_loss(_, y_pred):
@@ -35,6 +38,7 @@ def generator_loss(_, y_pred):
 class SAGAN:
 
     def __init__(self,
+                 model_id=None,
                  image_shape=(64, 64, 1),
                  gf_dim=4,
                  gfc_dim=512,
@@ -47,7 +51,8 @@ class SAGAN:
                  beta1=0.0,
                  beta2=0.5,
                  dtype='float64',
-                 dataset_name='mnist'):
+                 dataset_name='mnist',
+                 dataset_path="."):
 
         # Input shape
         self.img_rows, self.img_cols, self.channels = self.img_shape = image_shape
@@ -60,7 +65,7 @@ class SAGAN:
         self.df_dim = df_dim
         self.dfc_dim = dfc_dim
         self.dataset_name = dataset_name
-        self.data_loader = DataLoader(dataset_name)
+        self.data_loader = DataLoader(dataset_path=dataset_path, dataset_name=dataset_name)
 
         generator_optimizer = Adam(learning_rate_g, beta1)
         discriminator_optimizer = Adam(learning_rate_d, beta2)
@@ -89,6 +94,9 @@ class SAGAN:
         self.combined = Model(z, valid)
         self.combined.compile(loss=generator_loss, optimizer=generator_optimizer)
 
+        if model_id is not None:
+            self.combined.load_weights(f"saved_model/{dataset_name}/{model_id}.h5")
+
     def build_generator(self):
 
         def create_conv_transp(filters):
@@ -102,16 +110,16 @@ class SAGAN:
         model.add(create_conv_transp(self.gfc_dim // 2))
         model.add(BatchNormalization(momentum=0.8))
         model.add(ReLU())
-        model.add(SelfAttention())
 
         model.add(create_conv_transp(self.gfc_dim // 4))
         model.add(BatchNormalization(momentum=0.8))
         model.add(ReLU())
 
+        model.add(SelfAttention())
+
         model.add(create_conv_transp(self.gfc_dim // 8))
         model.add(BatchNormalization(momentum=0.8))
         model.add(ReLU())
-        model.add(SelfAttention())
 
         model.add(create_conv_transp(self.gfc_dim // 16))
         model.add(BatchNormalization(momentum=0.8))
@@ -142,16 +150,16 @@ class SAGAN:
         model.add(create_conv(self.dfc_dim))
         model.add(BatchNormalization(momentum=0.8))
         model.add(LeakyReLU(alpha=self.alpha))
-        model.add(SelfAttention())
 
         model.add(create_conv(self.dfc_dim * 2))
         model.add(BatchNormalization(momentum=0.8))
         model.add(LeakyReLU(alpha=self.alpha))
 
+        model.add(SelfAttention())
+
         model.add(create_conv(self.dfc_dim * 4))
         model.add(BatchNormalization(momentum=0.8))
         model.add(LeakyReLU(alpha=self.alpha))
-        model.add(SelfAttention())
 
         model.add(create_conv(self.dfc_dim * 8))
         model.add(BatchNormalization(momentum=0.8))
@@ -172,6 +180,17 @@ class SAGAN:
         # Adversarial ground truths
         valid = np.ones((batch_size, 1))
         fake = np.zeros((batch_size, 1))
+
+        start_time = datetime.datetime.now()
+
+        tensorboard = TensorBoard(batch_size=batch_size, write_grads=True)
+        tensorboard.set_model(self.combined)
+
+        def named_logs(model, logs):
+            result = {}
+            for l in zip(model.metrics_names, logs):
+                result[l[0]] = l[1]
+            return result
 
         for epoch in range(epochs):
 
@@ -198,12 +217,21 @@ class SAGAN:
             # Train the generator (wants discriminator to mistake images as real)
             g_loss = self.combined.train_on_batch(noise, valid)
 
+            elapsed_time = datetime.datetime.now() - start_time
+
             # Plot the progress
-            print("%d [D loss: %f, acc.: %.2f%%] [G loss: %f]" % (epoch, d_loss[0], 100 * d_loss[1], g_loss))
+            print("%d [D loss: %f, acc.: %.2f%%] [G loss: %f] time: %s" % (
+                epoch, d_loss[0], 100 * d_loss[1], g_loss, elapsed_time))
+
+            tensorboard.on_epoch_end(epoch, named_logs(self.combined, [g_loss]))
 
             # If at save interval => save generated image samples
             if epoch % save_interval == 0:
                 self.save_imgs(epoch)
+                self.combined.save_weights(f"saved_model/{self.dataset_name}/{epoch}.h5")
+
+        self.save_imgs(epochs - 1)
+        self.combined.save_weights(f"saved_model/{self.dataset_name}/{epoch}.h5")
 
     def save_imgs(self, epoch):
         r, c = 5, 5
@@ -217,13 +245,17 @@ class SAGAN:
         cnt = 0
         for i in range(r):
             for j in range(c):
-                axs[i, j].imshow(gen_imgs[cnt, :, :, 0], cmap='gray')
+                if self.dataset_name == 'mnist':
+                    axs[i, j].imshow(gen_imgs[cnt, :, :, 0], cmap='gray')
+                else:
+                    axs[i, j].imshow(gen_imgs[cnt])
                 axs[i, j].axis('off')
                 cnt += 1
-        fig.savefig("images/mnist_%d.png" % epoch)
+        fig.savefig(f"images/{self.dataset_name}/{epoch}.png", dpi=200)
         plt.close()
 
 
 if __name__ == '__main__':
-    sagan = SAGAN()
+    sagan = SAGAN(image_shape=(64, 64, 3),
+                  dataset_name="img_align_celeba", dataset_path="G:\data\GAN")
     sagan.train(epochs=4000, batch_size=64, save_interval=100)
